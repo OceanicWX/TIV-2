@@ -1,0 +1,418 @@
+local player = game.Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local root = character:WaitForChild("HumanoidRootPart")
+local backpack = player:WaitForChild("Backpack")
+local TweenService = game:GetService("TweenService")
+local camera = workspace.CurrentCamera
+local RunService = game:GetService("RunService")
+local PlayerGui = player:WaitForChild("PlayerGui")
+local assetId = "rbxassetid://18610130072"
+local currentVehicle = nil
+local shieldsLowered, isTweening, spikesRaised, isTweeningSpikes, viewingTurret, bodyLowered, isTweeningBody = false, false, false, false, false, false, false
+local isSeated, playerWeld, jumpConnection, targetSeat = false, nil, nil, nil
+local originalOffsets, currentAnimOffsets = {}, {}
+local AUDIO_IDS = {
+    Airbags = "rbxassetid://113736821753793",
+    SideFlaps = "rbxassetid://95305655357721",
+    FrontFlap = "rbxassetid://86935742939752",
+    SideSpikes = "rbxassetid://118063677309726",
+    BackSpikes = "rbxassetid://77403948691780",
+    Startup = "rbxassetid://85263935766709",
+    Engine = "rbxassetid://118596312339282"
+}
+local startupSound, engineSound, engState = nil, nil, "Off"
+local screenGui, persistentGui, speedText = nil, nil, nil
+local driveStateFlags = {forward = false, reverse = false, left = false, right = false, brake = false, currentSpeed = 0}
+
+local function playAudioClip(audioName, parentInstance)
+    if not parentInstance then parentInstance = root end
+    local soundId = AUDIO_IDS[audioName]
+    if not soundId then return end
+    local sound = Instance.new("Sound")
+    sound.SoundId = soundId
+    sound.Volume = 1
+    sound.Parent = parentInstance
+    sound:Play()
+    sound.Ended:Connect(function() sound:Destroy() end)
+    return sound
+end
+
+local function startEng()
+    if engState ~= "Off" then return end
+    engState = "Starting"
+    if engineSound then engineSound:Stop() end
+    if startupSound then startupSound:Destroy() end
+    startupSound = Instance.new("Sound")
+    startupSound.SoundId = AUDIO_IDS.Startup
+    startupSound.Volume = 2.0
+    startupSound.Parent = root
+    startupSound:Play()
+    if engineSound then engineSound.Volume = 0 engineSound:Play() end
+    task.spawn(function()
+        local duration, elapsed = 2.5, 0
+        while elapsed < duration and engState == "Starting" do
+            task.wait(0.05)
+            elapsed = elapsed + 0.05
+            if startupSound and startupSound.Parent and startupSound.TimePosition >= (duration - 0.8) and engineSound then
+                engineSound.Volume = math.clamp(((startupSound.TimePosition - (duration - 0.8)) / 0.8) * 1.8, 0, 1.8)
+            end
+        end
+        if engState == "Starting" then engState = "Running" if engineSound then engineSound.Volume = 1.8 end end
+    end)
+end
+
+local function stopEng()
+    engState = "Off"
+    if startupSound then startupSound:Stop() startupSound:Destroy() startupSound = nil end
+    task.spawn(function()
+        while engineSound and engineSound.Volume > 0 and engState == "Off" do
+            engineSound.Volume = math.max(0, engineSound.Volume - 0.2)
+            task.wait(0.02)
+        end
+        if engState == "Off" and engineSound then engineSound:Stop() end
+    end)
+end
+
+local function exitSeat()
+    if not isSeated then return end
+    isSeated = false
+    stopEng()
+    if playerWeld and playerWeld.Parent then playerWeld:Destroy() end
+    playerWeld = nil
+    if jumpConnection then jumpConnection:Disconnect() end
+    jumpConnection = nil
+    player.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Zoom
+    if screenGui then screenGui.Enabled = false end
+    if persistentGui then persistentGui.Enabled = false end
+    if root and currentVehicle then root.CFrame = currentVehicle:GetPivot() * CFrame.new(-6, 2, 0) end
+    local humanoidPart = character:FindFirstChild("Humanoid")
+    if humanoidPart then humanoidPart.Sit = false end
+end
+
+local function enterSeat()
+    if isSeated or not character or not targetSeat then return end
+    local humanoidPart = character:FindFirstChild("Humanoid")
+    if root and humanoidPart and humanoidPart.Health > 0 then
+        isSeated = true
+        root.CFrame = targetSeat.CFrame * CFrame.new(0, 1.5, 0)
+        humanoidPart.Sit = true
+        playerWeld = Instance.new("WeldConstraint", root)
+        playerWeld.Name = "ForcedLocalSeatLock"
+        playerWeld.Part0 = targetSeat
+        playerWeld.Part1 = root
+        player.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Zoom
+        if screenGui then screenGui.Enabled = true end
+        if persistentGui then persistentGui.Enabled = true end
+        startEng()
+        jumpConnection = humanoidPart:GetPropertyChangedSignal("Jump"):Connect(function()
+            if humanoidPart.Jump then exitSeat() end
+        end)
+    end
+end
+
+local function lookForSeat(parent)
+    for _, desc in ipairs(parent:GetDescendants()) do
+        if desc:IsA("BasePart") and (desc.Name == "DriveSeat" or desc.Name == "DriverSeat" or desc.Name == "VehicleSeat") then
+            return desc
+        end
+    end
+    return nil
+end
+
+local function getVehicleDescendants()
+    if not currentVehicle then return {} end
+    if typeof(currentVehicle) == "Instance" then return currentVehicle:GetDescendants()
+    elseif typeof(currentVehicle) == "table" then
+        local descendants = {}
+        for _, obj in ipairs(currentVehicle) do
+            if typeof(obj) == "Instance" then
+                table.insert(descendants, obj)
+                for _, desc in ipairs(obj:GetDescendants()) do table.insert(descendants, desc) end
+            end
+        end
+        return descendants
+    end
+    return {}
+end
+
+local function spawnVehicle()
+    for _, old in ipairs(workspace:GetChildren()) do
+        if old.Name == "Model" and old:FindFirstChild("Dominator3") or old.Name == "Dominator3" or old:FindFirstChild("LeftShield") then
+            old:Destroy()
+        end
+    end
+    originalOffsets, currentAnimOffsets = {}, {}
+    shieldsLowered, isTweening, spikesRaised, isTweeningSpikes, viewingTurret, bodyLowered, isTweeningBody = false, false, false, false, false, false, false
+
+    local success, objects = pcall(function() return game:GetObjects(assetId) end)
+    local model = nil
+    if success and objects then
+        if typeof(objects) == "Instance" then model = objects
+        elseif typeof(objects) == "table" and #objects > 0 then model = objects end
+    end
+    if not model then
+        local success2, model2 = pcall(function() return game:GetService("InsertService"):LoadAsset(18610130072) end)
+        if success2 and model2 then model = model2:FindFirstChildOfClass("Model") or model2 end
+    end
+    if not model then return end
+
+    if typeof(model) == "table" then
+        for _, obj in ipairs(model) do if typeof(obj) == "Instance" then obj.Parent = workspace end end
+    else model.Parent = workspace end
+    currentVehicle = model
+
+    local spawnCFrame = root.CFrame * CFrame.new(0, -1.8, -5)
+    if model:IsA("Model") then model:PivotTo(spawnCFrame) else model.CFrame = spawnCFrame end
+
+    local driverSeatPart = lookForSeat(model) or (model:IsA("BasePart") and model or model:FindFirstChildOfClass("BasePart"))
+    for _, part in ipairs(model:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Anchored, part.CanCollide = true, true
+            originalOffsets[part] = driverSeatPart.CFrame:ToObjectSpace(part.CFrame)
+            currentAnimOffsets[part] = CFrame.identity
+        end
+    end
+
+    targetSeat = Instance.new("Part")
+    targetSeat.Name, targetSeat.Size, targetSeat.Transparency = "CustomIsolatedSeat", Vector3.new(4, 0.5, 4), 1
+    targetSeat.Anchored, targetSeat.CanCollide, targetSeat.Parent = true, true, workspace
+    targetSeat.CFrame = driverSeatPart.CFrame * CFrame.new(0, -0.3, 0)
+    targetSeat.Touched:Connect(function(hit) if character and hit.Parent == character then enterSeat() end end)
+
+    if engineSound then engineSound:Destroy() end
+    engineSound = Instance.new("Sound")
+    engineSound.SoundId, engineSound.Volume, engineSound.Looped, engineSound.Parent = AUDIO_IDS.Engine, 0, true, root
+
+    local oldDriveGui = PlayerGui:FindFirstChild("Dominator2DriveUI")
+    if oldDriveGui then oldDriveGui:Destroy() end
+    local oldPersGui = PlayerGui:FindFirstChild("Dominator2PersistentUI")
+    if oldPersGui then oldPersGui:Destroy() end
+
+    screenGui = Instance.new("ScreenGui")
+    screenGui.Name, screenGui.ResetOnSpawn, screenGui.Parent, screenGui.Enabled = "Dominator2DriveUI", false, PlayerGui, false
+    persistentGui = Instance.new("ScreenGui")
+    persistentGui.Name, persistentGui.ResetOnSpawn, persistentGui.Parent, persistentGui.Enabled = "Dominator2PersistentUI", false, PlayerGui, false
+
+    local mainUIFrame = Instance.new("Frame", screenGui)
+    mainUIFrame.Size, mainUIFrame.BackgroundTransparency = UDim2.new(1, 0, 1, 0), 1
+    local leftSteerPanel = Instance.new("Frame", mainUIFrame)
+    leftSteerPanel.Size, leftSteerPanel.Position, leftSteerPanel.BackgroundTransparency = UDim2.new(0, 160, 0, 70), UDim2.new(0, 40, 1, -110), 1
+    local rightPedalPanel = Instance.new("Frame", mainUIFrame)
+    rightPedalPanel.Size, rightPedalPanel.Position, rightPedalPanel.BackgroundTransparency = UDim2.new(0, 180, 0, 110), UDim2.new(1, -220, 1, -150), 1
+    local speedoFrame = Instance.new("Frame", mainUIFrame)
+    speedoFrame.Size, speedoFrame.Position, speedoFrame.BackgroundColor3, speedoFrame.BackgroundTransparency = UDim2.new(0, 180, 0, 70), UDim2.new(0.5, -90, 1, -120), Color3.fromRGB(15, 15, 15), 0.5
+    Instance.new("UICorner", speedoFrame).CornerRadius = UDim.new(0, 8)
+
+    speedText = Instance.new("TextLabel", speedoFrame)
+    speedText.Size, speedText.Position, speedText.BackgroundTransparency = UDim2.new(1, 0, 0.7, 0), UDim2.new(0, 0, 0, 2), 1
+    speedText.Text, speedText.TextColor3, speedText.Font, speedText.TextSize = "000", Color3.fromRGB(100, 240, 255), Enum.Font.Code, 34
+    local unitText = Instance.new("TextLabel", speedoFrame)
+unitText.Size, unitText.Position, unitText.BackgroundTransparency = UDim2.new(1, 0, 0.3, 0), UDim2.new(0, 0, 0.65, 0), 1
+unitText.Text, unitText.TextColor3, unitText.Font, unitText.TextSize = "MPH", Color3.fromRGB(160, 160, 160), Enum.Font.SourceSansBold, 14
+
+local controlBar = Instance.new("Frame", mainUIFrame)
+controlBar.Size, controlBar.Position, controlBar.BackgroundTransparency = UDim2.new(0, 590, 0, 50), UDim2.new(0.5, -295, 1, -185), 1
+local persistentPanel = Instance.new("Frame", persistentGui)
+persistentPanel.Size, persistentPanel.Position, persistentPanel.BackgroundTransparency = UDim2.new(0, 200, 0, 40), UDim2.new(0, 40, 0, 70), 1
+
+local function createSleekButton(text, pos, size, parent)
+local btn = Instance.new("TextButton", parent)
+btn.Text, btn.Size, btn.Position, btn.BackgroundColor3 = text, size, pos, Color3.fromRGB(20, 20, 20)
+btn.TextColor3, btn.Font, btn.TextSize, btn.BackgroundTransparency = Color3.fromRGB(245, 245, 245), Enum.Font.SourceSansBold, 22, 0.4
+Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+return btn
+end
+
+local btnLeft = createSleekButton("◀", UDim2.new(0, 0, 0, 10), UDim2.new(0, 70, 0, 50), leftSteerPanel)
+local btnRight = createSleekButton("▶", UDim2.new(0, 85, 0, 10), UDim2.new(0, 70, 0, 50), leftSteerPanel)
+local btnBrake = createSleekButton("┃┃┃", UDim2.new(0, 0, 0, 10), UDim2.new(0, 45, 0, 90), rightPedalPanel)
+btnBrake.TextColor3 = Color3.fromRGB(220, 60, 60)
+local btnReverse = createSleekButton("R", UDim2.new(0, 60, 0, 25), UDim2.new(0, 45, 0, 75), rightPedalPanel)
+local btnForward = createSleekButton("┃┃┃", UDim2.new(0, 120, 0, 10), UDim2.new(0, 45, 0, 90), rightPedalPanel)
+btnForward.TextColor3 = Color3.fromRGB(60, 180, 60)
+
+local btnDeploy = createSleekButton("DEPLOY", UDim2.new(0, 0, 0, 0), UDim2.new(0, 140, 1, 0), controlBar)
+btnDeploy.BackgroundColor3, btnDeploy.TextColor3, btnDeploy.Active, btnDeploy.Selectable = Color3.fromRGB(40, 40, 40), Color3.fromRGB(100, 100, 100), false, false
+
+local btnHideUI = createSleekButton("HIDE UI", UDim2.new(0, 0, 0, 0), UDim2.new(0, 90, 1, 0), persistentPanel)
+btnHideUI.TextSize = 14
+local btnEngineToggle = createSleekButton("ENG ON", UDim2.new(0, 100, 0, 0), UDim2.new(0, 90, 1, 0), persistentPanel)
+btnEngineToggle.TextSize, btnEngineToggle.BackgroundColor3 = 14, Color3.fromRGB(20, 100, 20)
+
+local globalUIHidden, engineKillOverride, hiddenGuisCache = false, false, {}
+
+btnHideUI.MouseButton1Click:Connect(function()
+globalUIHidden = not globalUIHidden
+btnHideUI.Text = globalUIHidden and "SHOW UI" or "HIDE UI"
+if globalUIHidden then
+for _, gui in ipairs(PlayerGui:GetChildren()) do
+if gui:IsA("ScreenGui") and gui ~= persistentGui and gui ~= screenGui and gui.Enabled == true then
+hiddenGuisCache[gui] = true gui.Enabled = false
+end
+end
+mainUIFrame.Visible = false
+else
+for gui, _ in pairs(hiddenGuisCache) do if gui and gui.Parent then gui.Enabled = true end end
+table.clear(hiddenGuisCache) mainUIFrame.Visible = true
+end
+end)
+
+btnEngineToggle.MouseButton1Click:Connect(function()
+engineKillOverride = not engineKillOverride
+if engineKillOverride then
+btnEngineToggle.Text, btnEngineToggle.BackgroundColor3 = "ENG OFF", Color3.fromRGB(100, 20, 20)
+driveStateFlags.forward, driveStateFlags.reverse, driveStateFlags.left, driveStateFlags.right, driveStateFlags.brake, driveStateFlags.currentSpeed = false, false, false, false, false, 0
+stopEng()
+else
+btnEngineToggle.Text, btnEngineToggle.BackgroundColor3 = "ENG ON", Color3.fromRGB(20, 100, 20)
+if isSeated then startEng() end
+end
+end)
+
+local function bindDriveInput(btn, flag)
+btn.InputBegan:Connect(function(input)
+if (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1) and not engineKillOverride then
+if flag == "forward" then driveStateFlags.reverse = false elseif flag == "reverse" then driveStateFlags.forward = false end
+driveStateFlags[flag] = true btn.BackgroundTransparency = 0.1
+end
+end)
+btn.InputEnded:Connect(function(input)
+if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+driveStateFlags[flag] = false btn.BackgroundTransparency = 0.4
+end
+end)
+end
+bindDriveInput(btnForward, "forward") bindDriveInput(btnReverse, "reverse")
+bindDriveInput(btnLeft, "left") bindDriveInput(btnRight, "right") bindDriveInput(btnBrake, "brake")
+
+RunService.Heartbeat:Connect(function(dt)
+if not model or not model.Parent or not driverSeatPart then return end
+if isSeated then
+if screenGui and not screenGui.Enabled then screenGui.Enabled = true end
+if persistentGui and not persistentGui.Enabled then persistentGui.Enabled = true end
+else
+if screenGui and screenGui.Enabled then screenGui.Enabled = false end
+if persistentGui and persistentGui.Enabled then persistentGui.Enabled = false end
+driveStateFlags.forward, driveStateFlags.reverse, driveStateFlags.left, driveStateFlags.right, driveStateFlags.brake, driveStateFlags.currentSpeed = false, false, false, false, false, 0
+end
+
+local maxSpeed, maxReverse = 75, -28
+local accelFactor, brakeFactor, frictionFactor = 45 * dt, 120 * dt, 20 * dt
+
+if driveStateFlags.brake then
+if driveStateFlags.currentSpeed > 0 then driveStateFlags.currentSpeed = math.max(0, driveStateFlags.currentSpeed - brakeFactor)
+else driveStateFlags.currentSpeed = math.min(0, driveStateFlags.currentSpeed + brakeFactor) end
+elseif driveStateFlags.forward and not engineKillOverride and isSeated then
+driveStateFlags.currentSpeed = math.min(maxSpeed, driveStateFlags.currentSpeed + accelFactor)
+elseif driveStateFlags.reverse and not engineKillOverride and isSeated then
+driveStateFlags.currentSpeed = math.max(maxReverse, driveStateFlags.currentSpeed - accelFactor)
+else
+if driveStateFlags.currentSpeed > 0 then driveStateFlags.currentSpeed = math.max(0, driveStateFlags.currentSpeed - frictionFactor)
+elseif driveStateFlags.currentSpeed < 0 then driveStateFlags.currentSpeed = math.min(0, driveStateFlags.currentSpeed + frictionFactor) end
+end
+
+local turnSpeed = 0
+if math.abs(driveStateFlags.currentSpeed) > 1 and isSeated then
+if driveStateFlags.left then turnSpeed = 1.6 * dt elseif driveStateFlags.right then turnSpeed = -1.6 * dt end
+if driveStateFlags.currentSpeed = 1 then stepConnection:Disconnect() end
+end)
+end
+
+vehicleTool.Activated:Connect(function()
+if not currentVehicle then spawnVehicle() return end
+if isTweening then return end isTweening = true
+task.spawn(function()
+if not shieldsLowered then
+shieldsLowered = true
+tweenVehicleGroup({"LeftShield", "LeftFlap", "LeftSpike", "RightShield", "RightFlap", "RightSpike", "FrontField", "FrontFlap", "Shield2", "FRI", "FLI"}, true, "SideFlaps")
+else
+tweenVehicleGroup({"FrontField", "FrontFlap", "Shield2", "FRI", "FLI", "RightShield", "RightFlap", "RightSpike", "LeftShield", "LeftFlap", "LeftSpike"}, false, "SideFlaps")
+shieldsLowered = false
+end
+task.wait(6) isTweening = false
+end)
+end)
+
+local spikeTool = Instance.new("Tool")
+spikeTool.Name, spikeTool.RequiresHandle, spikeTool.Parent = "Spike Controller", false, backpack
+
+local function tweenSpikeGroup(partNames, directionRaise, soundKeyToPlay, customDuration)
+if soundKeyToPlay then playAudioClip(soundKeyToPlay) end
+local duration, elapsed, stepConnection = customDuration or 3, 0, nil
+stepConnection = RunService.Heartbeat:Connect(function(dt)
+elapsed = elapsed + dt
+local alpha = math.clamp(elapsed / duration, 0, 1)
+local ease = TweenService:GetValue(alpha, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+for _, part in ipairs(getVehicleDescendants()) do
+if part:IsA("BasePart") and table.find(partNames, part.Name) then
+local targetOffset = directionRaise and ((part.Name == "BackSpike") and 2.3 or 3.2) or 0
+local targetLocalFrame = CFrame.new(0, targetOffset * ease, 0)
+if bodyLowered then targetLocalFrame = CFrame.new(0, -0.4, 0) * targetLocalFrame end
+currentAnimOffsets[part] = targetLocalFrame
+end
+end
+if alpha >= 1 then stepConnection:Disconnect() end
+end)
+end
+spikeTool.Activated:Connect(function()
+if not currentVehicle then spawnVehicle() return end
+if isTweeningSpikes then return end isTweeningSpikes = true
+task.spawn(function()
+if not spikesRaised then
+spikesRaised = true
+tweenSpikeGroup({"LeftSpike", "RightSpike"}, true, "SideSpikes", 7.5)
+tweenSpikeGroup({"BackSpike"}, true, "BackSpikes", 3)
+else
+tweenSpikeGroup({"BackSpike"}, false, "BackSpikes", 3)
+tweenSpikeGroup({"LeftSpike", "RightSpike"}, false, "SideSpikes", 7.5)
+spikesRaised = false
+end
+task.wait(7.5) isTweeningSpikes = false
+end)
+end)
+local cameraTool = Instance.new("Tool")
+cameraTool.Name, cameraTool.RequiresHandle, cameraTool.Parent = "Camera Toggle", false, backpack
+cameraTool.Activated:Connect(function()
+if not player.Character or not player.Character:FindFirstChild("Humanoid") then return end
+local humanoidPart = player.Character.Humanoid
+if not viewingTurret then
+local camPart = findCameraPart()
+if camPart then camera.CameraType, camera.CameraSubject, viewingTurret = Enum.CameraType.Custom, camPart, true
+else warn("Could not find a vehicle part named 'Cam' inside workspace.") end
+else camera.CameraType, camera.CameraSubject, viewingTurret = Enum.CameraType.Custom, humanoidPart, false end
+end)
+cameraTool.Unequipped:Connect(function()
+if player.Character and player.Character:FindFirstChild("Humanoid") then camera.CameraType, camera.CameraSubject = Enum.CameraType.Custom, player.Character.Humanoid end
+viewingTurret = false
+end)
+local airbagsTool = Instance.new("Tool")
+airbagsTool.Name, airbagsTool.RequiresHandle, airbagsTool.Parent = "Airbags Tool", false, backpack
+local function tweenAirbags(directionLower)
+bodyLowered = directionLower
+playAudioClip("Airbags")
+local duration, elapsed, stepConnection = 2, 0, nil
+stepConnection = RunService.Heartbeat:Connect(function(dt)
+elapsed = elapsed + dt
+local alpha = math.clamp(elapsed / duration, 0, 1)
+local ease = TweenService:GetValue(alpha, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local dynamicY = (directionLower and -0.4 or 0) * ease
+for _, part in ipairs(getVehicleDescendants()) do
+if part:IsA("BasePart") and not isPartInWheelsGroup(part) then
+local currentFrame = currentAnimOffsets[part] or CFrame.identity
+currentAnimOffsets[part] = CFrame.new(0, dynamicY, 0) * currentFrame.Rotation
+end
+end
+if alpha >= 1 then stepConnection:Disconnect() end
+end)
+end
+airbagsTool.Activated:Connect(function()
+if not currentVehicle then spawnVehicle() return end
+if isTweeningBody then return end isTweeningBody = true
+task.spawn(function() if not bodyLowered then tweenAirbags(true) else tweenAirbags(false) end task.wait(2) isTweeningBody = false end)
+end)
+local sitTool = Instance.new("Tool")
+sitTool.Name, sitTool.RequiresHandle, sitTool.Parent = "Sit (TIV 2)", false, backpack
+sitTool.Activated:Connect(function()
+if targetSeat and targetSeat.Parent then enterSeat() else warn("Custom seat platform is not currently spawned in workspace.") end
+end)
+spawnVehicle()
