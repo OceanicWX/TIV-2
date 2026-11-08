@@ -646,3 +646,40 @@ local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 initializeVehicle(char) equipSitTeleportTool()
 end
 runPipeline()
+local function cleanupPastInstances()
+	local workspaceChildren = game:GetService("Workspace"):GetChildren()
+	for _, child in ipairs(workspaceChildren) do
+		if child:IsA("Model") and child.Name == "DeltaVehicle_Instance" then
+			pcall(function()
+				child:Destroy()
+			end)
+		end
+	end
+	
+	local localPlayer = game:GetService("Players").LocalPlayer
+	if localPlayer then
+		local backpack = localPlayer:FindFirstChildOfClass("Backpack")
+		if backpack then
+			for _, item in ipairs(backpack:GetChildren()) do
+				if item:IsA("Tool") and item.Name == "Sit(TIV2)" then
+					pcall(function()
+						item:Destroy()
+					end)
+				end
+			end
+		end
+		
+		local character = localPlayer.Character
+		if character then
+			for _, item in ipairs(character:GetChildren()) do
+				if item:IsA("Tool") and item.Name == "Sit(TIV2)" then
+					pcall(function()
+						item:Destroy()
+					end)
+				end
+			end
+		end
+	end
+end
+
+cleanupPastInstances()
