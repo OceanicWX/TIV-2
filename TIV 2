@@ -1,4 +1,44 @@
--- PART 1 OF SCRIPT
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+
+local function cleanupPastInstances()
+	local workspaceChildren = Workspace:GetChildren()
+	for _, child in ipairs(workspaceChildren) do
+		if child:IsA("Model") and child.Name == "DeltaVehicle_Instance" then
+			pcall(function()
+				child:Destroy()
+			end)
+		end
+	end
+	
+	local localPlayer = Players.LocalPlayer
+	if localPlayer then
+		local backpack = localPlayer:FindFirstChildOfClass("Backpack")
+		if backpack then
+			for _, item in ipairs(backpack:GetChildren()) do
+				if item:IsA("Tool") and item.Name == "Sit(TIV2)" then
+					pcall(function()
+						item:Destroy()
+					end)
+				end
+			end
+		end
+		
+		local character = localPlayer.Character
+		if character then
+			for _, item in ipairs(character:GetChildren()) do
+				if item:IsA("Tool") and item.Name == "Sit(TIV2)" then
+					pcall(function()
+						item:Destroy()
+					end)
+				end
+			end
+		end
+	end
+end
+
+cleanupPastInstances()
+
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
