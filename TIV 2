@@ -182,20 +182,20 @@ local btnLeft = createSleekButton("◀", UDim2.new(0, 0, 0, 10), UDim2.new(0, 70
 local btnRight = createSleekButton("▶", UDim2.new(0, 85, 0, 10), UDim2.new(0, 70, 0, 50), leftSteerPanel, 22)
 local btnBrake = createSleekButton("┃┃┃", UDim2.new(0, 0, 0, 10), UDim2.new(0, 45, 0, 90), rightPedalPanel, 22)
 btnBrake.TextColor3 = Color3.fromRGB(220, 60, 60)
-local btnReverse = createSleekButton("R", UDim2.new(0, 60, 0, 25), UDim2.new(0, 45, 0, 75), rightPedalPanel, 20)
+local btnReverse = createSleekButton("Rv", UDim2.new(0, 60, 0, 25), UDim2.new(0, 45, 0, 75), rightPedalPanel, 20)
 local btnForward = createSleekButton("┃┃┃", UDim2.new(0, 120, 0, 10), UDim2.new(0, 45, 0, 90), rightPedalPanel, 22)
 btnForward.TextColor3 = Color3.fromRGB(60, 180, 60)
 
-local btnAirbags = createSleekButton("AIRBAGS", UDim2.new(0, 0, 0, 45), UDim2.new(0, 160, 0, 55), controlPanel, 20)
+local btnAirbags = createSleekButton("Airbags", UDim2.new(0, 0, 0, 45), UDim2.new(0, 160, 0, 55), controlPanel, 20)
 btnAirbags.BackgroundColor3 = Color3.fromRGB(30, 60, 110)
 
 local btnFlaps = createSleekButton("Flaps", UDim2.new(0, 0, 0, 0), UDim2.new(0, 75, 0, 38), controlPanel, 14)
 btnFlaps.BackgroundColor3 = Color3.fromRGB(50, 80, 50)
 
-local btnSpikes = createSleekButton("Spikes", UDim2.new(0, 85, 0, 0), UDim2.new(0, 75, 0, 38), controlPanel, 14)
+local btnSpikes = createSleekButton("ALL Spikes", UDim2.new(0, 85, 0, 0), UDim2.new(0, 75, 0, 38), controlPanel, 14)
 btnSpikes.BackgroundColor3 = Color3.fromRGB(70, 20, 20)
 
-local btnTurret = createSleekButton("Turret", UDim2.new(0, 175, 0, 45), UDim2.new(0, 110, 0, 55), controlPanel, 14)
+local btnTurret = createSleekButton("Imax dome thingie", UDim2.new(0, 175, 0, 45), UDim2.new(0, 110, 0, 55), controlPanel, 14)
 btnTurret.BackgroundColor3 = Color3.fromRGB(80, 40, 110)
 
 local btnHideUI = createSleekButton("HIDE UI", UDim2.new(0, 0, 0, 0), UDim2.new(0, 85, 1, 0), topSystemPanel, 13)
