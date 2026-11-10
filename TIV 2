@@ -204,7 +204,7 @@ btnHideUI.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 local btnEngineToggle = createSleekButton("ENG ON", UDim2.new(0, 95, 0, 0), UDim2.new(0, 85, 1, 0), topSystemPanel, 13)
 btnEngineToggle.BackgroundColor3 = Color3.fromRGB(20, 100, 20)
 
--- LIGHTS CONFIGURATION INTERFACE BUTTON
+
 local btnLightsToggle = createSleekButton("LIGHTS OFF", UDim2.new(0, 190, 0, 0), UDim2.new(0, 95, 1, 0), topSystemPanel, 13)
 btnLightsToggle.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
 
@@ -272,7 +272,7 @@ local function updateModelLights(state)
 	for _, child in ipairs(VehicleModel:GetDescendants()) do
 		if child:IsA("Light") then
 			child.Enabled = state
-		elseif child:IsA("BasePart") and (string.lower(child.Name):find("neon") or string.lower(child.Name):find("headlight")) then
+		elseif child:IsA("BasePart") and (string.lower(child.Name):find("L") or string.lower(child.Name):find("headlight")) then
 			child.Material = state and Enum.Material.Neon or Enum.Material.SmoothPlastic
 		end
 	end
