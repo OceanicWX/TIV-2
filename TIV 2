@@ -272,7 +272,7 @@ local function updateModelLights(state)
 	for _, child in ipairs(VehicleModel:GetDescendants()) do
 		if child:IsA("Light") then
 			child.Enabled = state
-		elseif child:IsA("BasePart") and (string.lower(child.Name):find("L") or string.lower(child.Name):find("headlight")) then
+		elseif child:IsA("BasePart") and (string.lower(child.Name):find("FLI") or string.lower(child.Name):find("FLI")) then
 			child.Material = state and Enum.Material.Neon or Enum.Material.SmoothPlastic
 		end
 	end
