@@ -27,7 +27,7 @@ local function cleanupPastInstances()
 		local character = localPlayer.Character
 		if character then
 			for _, item in ipairs(character:GetChildren()) do
-				if item:IsA("Tool") and item.Name == "Sit(TIV2)" then
+				if item:IsA("Tool") and item.Name == "Sit (FOR TIV2)" then
 					pcall(function()
 						item:Destroy()
 					end)
