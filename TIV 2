@@ -198,6 +198,78 @@ btnSpikes.BackgroundColor3 = Color3.fromRGB(70, 20, 20)
 local btnTurret = createSleekButton("Imax dome thingie", UDim2.new(0, 175, 0, 45), UDim2.new(0, 110, 0, 55), controlPanel, 14)
 btnTurret.BackgroundColor3 = Color3.fromRGB(80, 40, 110)
 
+local btnAutoDeploy = createSleekButton("AUTO", UDim2.new(0, 175, 0, 0), UDim2.new(0, 110, 0, 38), controlPanel, 14)
+btnAutoDeploy.BackgroundColor3 = Color3.fromRGB(120, 80, 20)
+
+local isAutoRunning = false
+
+btnAutoDeploy.MouseButton1Click:Connect(function()
+	if isAutoRunning or isDeploymentTweening or not VehicleModel then return end
+	isAutoRunning = true
+	btnAutoDeploy.Text = "RUNNING..."
+	btnAutoDeploy.BackgroundColor3 = Color3.fromRGB(150, 40, 40)
+
+	if not airbagsDeployed then
+		driveState.forward, driveState.reverse, driveState.left, driveState.right, driveState.currentSpeed = false, false, false, false, 0
+		isDeploymentTweening = true
+		airbagsDeployed = true
+		playAudio("Airbags")
+		local airbagDur = getSoundDuration("Airbags")
+		applyAbsoluteVehicleState(airbagDur)
+		task.wait(airbagDur)
+		isDeploymentTweening = false
+	end
+
+	if not flapsDeployed then
+		driveState.forward, driveState.reverse, driveState.left, driveState.right, driveState.currentSpeed = false, false, false, false, 0
+		isDeploymentTweening = true
+		flapsDeployed = true
+		local sideFlapDur = getSoundDuration("SideFlaps")
+		local frontFlapDur = getSoundDuration("FrontFlap")
+		playAudio("SideFlaps") 
+		tweenComponentToAbsoluteState("LeftFlap", sideFlapDur) 
+		tweenComponentToAbsoluteState("LeftShield", sideFlapDur) 
+		tweenComponentToAbsoluteState("LeftSpike", sideFlapDur) 
+		task.wait(sideFlapDur)
+		playAudio("SideFlaps") 
+		tweenComponentToAbsoluteState("RightFlap", sideFlapDur) 
+		tweenComponentToAbsoluteState("RightShield", sideFlapDur) 
+		tweenComponentToAbsoluteState("RightSpike", sideFlapDur) 
+		task.wait(sideFlapDur)
+		playAudio("FrontFlap") 
+		tweenComponentToAbsoluteState("FrontFlap", frontFlapDur) 
+		tweenComponentToAbsoluteState("Shield2", frontFlapDur) 
+		tweenComponentToAbsoluteState("FLI", frontFlapDur) 
+		tweenComponentToAbsoluteState("FRI", frontFlapDur) 
+		task.wait(frontFlapDur)
+		isDeploymentTweening = false
+	end
+
+	if not spikesDeployed then
+		driveState.forward, driveState.reverse, driveState.left, driveState.right, driveState.currentSpeed = false, false, false, false, 0
+		isDeploymentTweening = true
+		spikesDeployed = true
+		local sideSpikeDur = getSoundDuration("SideSpikes")
+		local rearSpikeDur = getSoundDuration("RearSpike")
+		playAudio("SideSpikes") 
+		tweenComponentToAbsoluteState("LeftSpike", sideSpikeDur) 
+		tweenComponentToAbsoluteState("RightSpike", sideSpikeDur) 
+		task.wait(sideSpikeDur)
+		playAudio("RearSpike") 
+		tweenComponentToAbsoluteState("BackSpike", rearSpikeDur) 
+		task.wait(rearSpikeDur)
+		isDeploymentTweening = false
+	end
+
+	btnAutoDeploy.Text = "AUTO"
+	btnAutoDeploy.BackgroundColor3 = Color3.fromRGB(120, 80, 20)
+	isAutoRunning = false
+end)
+
+btnHideUI.MouseButton1Click:Connect(function()
+	btnAutoDeploy.Visible = not driveState.globalUIHidden
+end)
+
 local btnHideUI = createSleekButton("HIDE UI", UDim2.new(0, 0, 0, 0), UDim2.new(0, 85, 1, 0), topSystemPanel, 13)
 btnHideUI.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 
